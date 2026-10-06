@@ -1,0 +1,291 @@
+// Схема базы данных магазина.
+// Деньги — Int в минимальных единицах (копейках).
+// После изменения схемы: npm run db:migrate
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────── Пользователи и админы ─────────
+
+model User {
+  id           Int        @id @default(autoincrement())
+  telegramId   BigInt     @unique
+  username     String?
+  firstName    String?
+  lastName     String?
+  languageCode String?
+  photoUrl     String?
+  /// Последний введённый при оформлении — для автозаполнения
+  phone        String?
+  /// Разрешил ли пользователь боту писать ему (нужно для уведомлений)
+  canWrite     Boolean    @default(false)
+  createdAt    DateTime   @default(now())
+  lastSeenAt   DateTime   @default(now())
+
+  cartItems   CartItem[]
+  orders      Order[]
+  sharedCarts SharedCart[]
+}
+
+/// Дополнительные админы. Суперадмины задаются в ADMIN_IDS (.env).
+model Admin {
+  id         Int      @id @default(autoincrement())
+  telegramId BigInt   @unique
+  name       String?
+  addedBy    BigInt?
+  createdAt  DateTime @default(now())
+}
+
+// ───────── Каталог ─────────
+
+model Category {
+  id        Int       @id @default(autoincrement())
+  name      String
+  slug      String    @unique
+  sortOrder Int       @default(0)
+  isActive  Boolean   @default(true)
+  products  Product[]
+}
+
+enum ProductStatus {
+  ACTIVE   // виден в магазине
+  HIDDEN   // временно скрыт
+  ARCHIVED // в архиве
+}
+
+model Product {
+  id          Int           @id @default(autoincrement())
+  title       String
+  description String        @default("")
+  categoryId  Int
+  category    Category      @relation(fields: [categoryId], references: [id], onDelete: Restrict)
+  price       Int
+  /// Зачёркнутая цена (скидка)
+  oldPrice    Int?
+  /// Артикул
+  sku         String        @unique
+  brand       String?
+  material    String?
+  status      ProductStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  images   ProductImage[]
+  variants ProductVariant[]
+
+  @@index([categoryId, status])
+  @@index([status, createdAt])
+  @@index([price])
+}
+
+model ProductImage {
+  id        Int     @id @default(autoincrement())
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Публичный путь: /uploads/products/<uuid>.webp
+  url       String
+  thumbUrl  String
+  sortOrder Int     @default(0)
+  isMain    Boolean @default(false)
+
+  @@index([productId, sortOrder])
+}
+
+model ProductVariant {
+  id        Int     @id @default(autoincrement())
+  productId Int
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  /// Вариант: объём памяти, размер корпуса и т.п. ("256 ГБ", "42 мм")
+  size      String
+  color     String
+  colorHex  String?
+  /// Своя цена варианта; null — используется цена товара
+  price     Int?
+  stock     Int     @default(0)
+
+  cartItems  CartItem[]
+  orderItems OrderItem[]
+
+  @@unique([productId, size, color])
+}
+
+// ───────── Корзина (на сервере — одна на пользователя) ─────────
+
+model CartItem {
+  id        Int            @id @default(autoincrement())
+  userId    Int
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  variantId Int
+  variant   ProductVariant @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity  Int
+  createdAt DateTime       @default(now())
+
+  @@unique([userId, variantId])
+}
+
+/// Корзина, которой поделились: снимок позиций по ссылке-токену
+model SharedCart {
+  id        Int      @id @default(autoincrement())
+  /// Случайный токен для ссылки (t.me/<бот>?start=cart_<token>)
+  token     String   @unique
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// [{ variantId, quantity }]
+  items     Json
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  @@index([userId])
+}
+
+// ───────── Доставка и оплата ─────────
+
+model DeliveryMethod {
+  id              Int     @id @default(autoincrement())
+  name            String
+  description     String?
+  price           Int     @default(0)
+  /// Бесплатная доставка от этой суммы товаров
+  freeFrom        Int?
+  /// Нужен ли адрес / пункт выдачи
+  requiresAddress Boolean @default(true)
+  isActive        Boolean @default(true)
+  sortOrder       Int     @default(0)
+  orders          Order[]
+}
+
+enum PaymentMethodType {
+  CARD
+  SBP
+  BANK_ACCOUNT
+  CRYPTO
+  OTHER
+}
+
+/// Реквизиты магазина для показа клиентам.
+/// Данные карт покупателей НЕ хранятся.
+model PaymentMethod {
+  id           Int               @id @default(autoincrement())
+  type         PaymentMethodType
+  title        String
+  recipient    String
+  /// Номер карты / телефона / счёта / кошелька — как ввёл админ
+  details      String
+  bank         String?
+  instructions String?
+  isActive     Boolean           @default(true)
+  sortOrder    Int               @default(0)
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  orders       Order[]
+}
+
+// ───────── Заказы ─────────
+
+enum OrderStatus {
+  NEW              // создан, способ оплаты не выбран
+  AWAITING_PAYMENT // выбран способ оплаты, ждём перевод
+  PAYMENT_REVIEW   // чек загружен, оплата на проверке
+  PAID
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+model Order {
+  /// Номер заказа — указывается в комментарии к платежу
+  id                Int             @id @default(autoincrement())
+  userId            Int
+  user              User            @relation(fields: [userId], references: [id], onDelete: Restrict)
+  status            OrderStatus     @default(NEW)
+
+  customerName      String
+  phone             String
+  address           String?
+  comment           String?
+  deliveryMethodId  Int?
+  deliveryMethod    DeliveryMethod? @relation(fields: [deliveryMethodId], references: [id], onDelete: SetNull)
+  /// Снимок названия доставки на момент заказа
+  deliveryName      String
+  deliveryPrice     Int
+
+  itemsTotal        Int
+  total             Int
+
+  paymentMethodId   Int?
+  paymentMethod     PaymentMethod?  @relation(fields: [paymentMethodId], references: [id], onDelete: SetNull)
+  /// Снимок реквизитов на момент выбора / загрузки чека
+  paymentSnapshot   Json?
+  /// Путь к чеку относительно UPLOAD_DIR (приватная папка receipts/)
+  receiptPath       String?
+  receiptUploadedAt DateTime?
+  rejectReason      String?
+  paidAt            DateTime?
+
+  trackingNumber    String?
+  adminNote         String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  items   OrderItem[]
+  history OrderStatusHistory[]
+
+  @@index([status, createdAt])
+  @@index([userId, createdAt])
+  @@index([paidAt])
+}
+
+model OrderItem {
+  id        Int             @id @default(autoincrement())
+  orderId   Int
+  order     Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  variantId Int?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: SetNull)
+  productId Int?
+  // Снимок товара на момент заказа
+  title     String
+  sku       String
+  size      String
+  color     String
+  imageUrl  String?
+  price     Int
+  quantity  Int
+
+  @@index([orderId])
+}
+
+/// Журнал смены статусов
+model OrderStatusHistory {
+  id         Int          @id @default(autoincrement())
+  orderId    Int
+  order      Order        @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  fromStatus OrderStatus?
+  toStatus   OrderStatus
+  /// telegramId админа; null — клиент или система
+  changedBy  BigInt?
+  comment    String?
+  createdAt  DateTime     @default(now())
+
+  @@index([orderId])
+}
+
+// ───────── Настройки магазина (одна строка, id = 1) ─────────
+
+model ShopSettings {
+  id              Int      @id @default(1)
+  shopName        String   @default("Мой магазин")
+  currency        String   @default("RUB")
+  supportUsername String?
+  supportPhone    String?
+  supportText     String?
+  aboutText       String?
+  /// Условия доставки: показываются в боте (/delivery) и при оформлении заказа
+  deliveryText    String?
+  updatedAt       DateTime @updatedAt
+}
