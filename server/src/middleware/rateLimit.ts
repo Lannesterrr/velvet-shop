@@ -18,3 +18,6 @@ export const uploadLimiter = rateLimit({ ...common, windowMs: 60_000, limit: 30 
 
 /** Создание заказов — защита от спама */
 export const orderLimiter = rateLimit({ ...common, windowMs: 10 * 60_000, limit: 10 });
+
+/** Вход из браузера через Telegram */
+export const loginLimiter = rateLimit({ ...common, windowMs: 10 * 60_000, limit: 30 });

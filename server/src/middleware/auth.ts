@@ -1,15 +1,18 @@
 /**
- * Авторизация через Telegram initData.
+ * Авторизация покупателя.
  *
- * Клиент присылает заголовок:  Authorization: tma <initData>
- * Сервер проверяет подпись (lib/initData.ts), создаёт/обновляет пользователя
- * и кладёт его в req.user. Никаким данным о пользователе из тела запроса не доверяем.
+ * Внутри Telegram клиент присылает  Authorization: tma <initData>
+ *   — сервер проверяет подпись (lib/initData.ts), создаёт/обновляет пользователя.
+ * В обычном браузере —  Authorization: web <token>
+ *   — токен сессии, выданный после входа через Telegram (lib/webSession.ts).
+ * Пользователь кладётся в req.user. Данным о пользователе из тела запроса не доверяем.
  */
 import type { NextFunction, Request, Response } from 'express';
 import { config } from '../config';
 import { prisma } from '../db';
 import { forbidden, unauthorized } from '../lib/errors';
 import { InitDataError, validateInitData, type TelegramInitUser } from '../lib/initData';
+import { verifySessionToken, WebAuthError } from '../lib/webSession';
 import { logger } from '../logger';
 import { isAdmin, isSuperAdmin } from '../services/admin.service';
 
@@ -38,7 +41,7 @@ declare global {
 const UPSERT_INTERVAL_MS = 10 * 60 * 1000;
 const recentUpserts = new Map<string, { userId: number; at: number }>();
 
-async function upsertUser(tgUser: TelegramInitUser): Promise<number> {
+export async function upsertUser(tgUser: TelegramInitUser): Promise<number> {
   const key = String(tgUser.id);
   const cached = recentUpserts.get(key);
   if (cached && Date.now() - cached.at < UPSERT_INTERVAL_MS) return cached.userId;
@@ -98,9 +101,39 @@ async function resolveTelegramUser(req: Request): Promise<TelegramInitUser> {
   throw unauthorized('Откройте магазин через Telegram');
 }
 
-/** Требует валидную авторизацию Telegram */
+/** Вход из браузера: по токену сессии находим уже существующего пользователя */
+async function resolveWebSession(token: string): Promise<AuthUser> {
+  let telegramId: bigint;
+  try {
+    telegramId = verifySessionToken(token, config.BOT_TOKEN);
+  } catch (err) {
+    if (err instanceof WebAuthError) throw unauthorized(err.message);
+    throw err;
+  }
+  const user = await prisma.user.findUnique({
+    where: { telegramId },
+    select: { id: true, username: true, firstName: true },
+  });
+  if (!user) throw unauthorized('Сессия недействительна — войдите ещё раз');
+  return {
+    id: user.id,
+    telegramId,
+    username: user.username,
+    firstName: user.firstName,
+    isAdmin: await isAdmin(telegramId),
+    isSuperAdmin: isSuperAdmin(telegramId),
+  };
+}
+
+/** Требует валидную авторизацию Telegram (Mini App или вход из браузера) */
 export async function requireAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
   try {
+    const [scheme, token] = (req.get('authorization') ?? '').split(' ');
+    if (scheme?.toLowerCase() === 'web' && token) {
+      req.user = await resolveWebSession(token);
+      return next();
+    }
+
     const tgUser = await resolveTelegramUser(req);
     const userId = await upsertUser(tgUser);
     const telegramId = BigInt(tgUser.id);

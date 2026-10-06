@@ -12,6 +12,7 @@ import { PRODUCTS_DIR } from './lib/files';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { apiLimiter } from './middleware/rateLimit';
 import { adminRouter } from './routes/admin';
+import { authRouter } from './routes/auth';
 import { filesRouter } from './routes/files';
 import { publicRouter } from './routes/public';
 
@@ -35,6 +36,8 @@ export function createApp(): Express {
           'script-src': ["'self'", 'https://telegram.org'],
           'img-src': ["'self'", 'data:', 'blob:', 'https://t.me', 'https://*.telegram.org', 'https://*.t.me'],
           'connect-src': ["'self'"],
+          // Вход из браузера через oauth.telegram.org (переход на страницу Telegram и обратно)
+          'form-action': ["'self'", 'https://oauth.telegram.org'],
           'frame-ancestors': ["'self'", 'https://web.telegram.org', 'https://*.telegram.org', 'https://t.me'],
           'upgrade-insecure-requests': config.isProd ? [] : null,
         },
@@ -68,6 +71,7 @@ export function createApp(): Express {
 
   // API: порядок важен — сначала более специфичные префиксы
   app.use('/api', apiLimiter);
+  app.use('/api/auth', authRouter);
   app.use('/api/files', filesRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api', publicRouter);
