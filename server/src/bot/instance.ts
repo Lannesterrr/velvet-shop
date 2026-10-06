@@ -2,7 +2,17 @@ import { Bot } from 'grammy';
 import { config } from '../config';
 
 /** Единственный экземпляр бота — используется и для команд, и для уведомлений */
-export const bot = new Bot(config.BOT_TOKEN);
+export const bot = new Bot(config.BOT_TOKEN, {
+  client: {
+    // Свой адрес Bot API (прокси хостинга), если задан
+    ...(config.TELEGRAM_API_ROOT ? { apiRoot: config.TELEGRAM_API_ROOT.replace(/\/+$/, '') } : {}),
+    // Не ждём зависший запрос по 8 минут (значение по умолчанию) — 60 с больше таймаута long polling (30 с)
+    timeoutSeconds: 60,
+  },
+});
+
+/** Адрес Bot API, к которому реально подключаемся (для логов и диагностики) */
+export const telegramApiRoot = (config.TELEGRAM_API_ROOT ?? 'https://api.telegram.org').replace(/\/+$/, '');
 
 /** Экранирование для parse_mode: 'HTML' */
 export function esc(text: string | null | undefined): string {

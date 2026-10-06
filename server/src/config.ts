@@ -52,6 +52,12 @@ const envSchema = z
      */
     WEBAPP_SHORT_NAME: z.string().regex(/^[\w-]{3,64}$/).optional(),
 
+    /**
+     * Адрес Telegram Bot API. Менять, только если хостинг требует свой прокси
+     * или локальный Bot API сервер. По умолчанию https://api.telegram.org
+     */
+    TELEGRAM_API_ROOT: z.string().url().optional(),
+
     /** polling — для разработки, webhook — для продакшена */
     BOT_MODE: z.enum(['polling', 'webhook', 'off']).default('polling'),
     /** Секрет для проверки, что webhook вызывает именно Telegram */

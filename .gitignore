@@ -9,3 +9,4 @@ server/.env
 
 # Загруженные файлы (фото товаров и чеки) — бэкапьте отдельно
 server/uploads/
+.build-hash

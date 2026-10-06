@@ -1,6 +1,7 @@
 /**
  * Telegram-бот (grammY): запуск Mini App, команды, модерация оплат из чата.
  */
+import { lookup as dnsLookup } from 'node:dns/promises';
 import type { Express } from 'express';
 import { GrammyError, HttpError as TgHttpError, InlineKeyboard, webhookCallback } from 'grammy';
 import { DEFAULT_DELIVERY_TEXT, ORDER_STATUS_EMOJI, ORDER_STATUS_LABELS, formatMoney } from '@shop/shared';
@@ -12,7 +13,7 @@ import { forgetUserCache } from '../middleware/auth';
 import { isAdmin } from '../services/admin.service';
 import { confirmPayment, rejectPayment } from '../services/order.service';
 import { getSettings } from '../services/settings.service';
-import { appUrl, bot, esc } from './instance';
+import { appUrl, bot, esc, telegramApiRoot } from './instance';
 
 /** Причина по умолчанию при отклонении оплаты кнопкой из чата */
 const DEFAULT_REJECT_REASON = 'Платёж не найден. Проверьте сумму и реквизиты перевода.';
@@ -177,6 +178,31 @@ function registerHandlers(): void {
   });
 }
 
+/**
+ * Диагностика связи с Telegram: какие IP у сервера API, отвечает ли он вообще.
+ * Вызывается, только если бот не смог подключиться.
+ */
+async function diagnoseTelegramConnection(): Promise<void> {
+  const host = new URL(telegramApiRoot).hostname;
+  try {
+    const addrs = await dnsLookup(host, { all: true });
+    logger.info(`Диагностика: ${host} → ${addrs.map((a) => a.address).join(', ')}`);
+  } catch (err) {
+    logger.error(`Диагностика: не удалось определить IP ${host} (DNS не работает): ${(err as Error).message}`);
+    return;
+  }
+  try {
+    const res = await fetch(telegramApiRoot, { signal: AbortSignal.timeout(10_000) });
+    logger.info(`Диагностика: ${telegramApiRoot} отвечает (HTTP ${res.status}) — сеть в порядке, проверьте BOT_TOKEN`);
+  } catch (err) {
+    const cause = (err as { cause?: { code?: string; message?: string } }).cause;
+    logger.error(
+      `Диагностика: нет связи с ${telegramApiRoot} (${cause?.code ?? cause?.message ?? (err as Error).message}). ` +
+        'Похоже, хостинг блокирует доступ к Telegram — спросите поддержку, нужен ли прокси (переменная TELEGRAM_API_ROOT).',
+    );
+  }
+}
+
 /** Настройка меню и команд бота (идемпотентно, при каждом старте) */
 async function configureBot(): Promise<void> {
   try {
@@ -223,7 +249,14 @@ export async function startBot(): Promise<void> {
     return;
   }
 
-  await bot.init();
+  logger.info(`Подключаемся к Telegram (${telegramApiRoot})…`);
+  try {
+    await bot.init();
+  } catch (err) {
+    // Подробно выясняем, в чём дело: DNS, сеть или токен — и пишем в логи понятным языком
+    await diagnoseTelegramConnection();
+    throw err;
+  }
   logger.info(`Бот @${bot.botInfo.username} инициализирован`);
   await configureBot();
 
