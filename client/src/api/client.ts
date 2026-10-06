@@ -1,9 +1,11 @@
 /**
  * HTTP-клиент API. К каждому запросу добавляется заголовок
- *   Authorization: tma <initData>
- * — сервер проверяет его подпись и по нему определяет пользователя.
+ *   Authorization: tma <initData>      — внутри Telegram
+ *   Authorization: web <token>         — в обычном браузере после входа через Telegram
+ * Сервер проверяет подпись и по нему определяет пользователя.
  */
 import type { ApiError as ApiErrorBody } from '@shop/shared';
+import { clearSessionToken, getSessionToken } from '../lib/webAuth';
 import { initDataRaw } from '../telegram/webapp';
 
 export class ApiError extends Error {
@@ -40,7 +42,9 @@ function buildUrl(path: string, query?: Query): string {
 
 export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
+  const webToken = initDataRaw ? null : getSessionToken();
   if (initDataRaw) headers.Authorization = `tma ${initDataRaw}`;
+  else if (webToken) headers.Authorization = `web ${webToken}`;
 
   let body: BodyInit | undefined;
   if (opts.formData) {
@@ -67,6 +71,8 @@ export async function api<T>(path: string, opts: RequestOptions = {}): Promise<T
 
   const data = (await res.json().catch(() => null)) as unknown;
   if (!res.ok) {
+    // Сессия браузера истекла или недействительна — забываем её, покажется экран входа
+    if (res.status === 401 && webToken) clearSessionToken();
     const err = (data ?? {}) as Partial<ApiErrorBody>;
     throw new ApiError(res.status, err.error ?? `Ошибка ${res.status}`, err.fields);
   }

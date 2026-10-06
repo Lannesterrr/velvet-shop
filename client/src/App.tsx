@@ -2,7 +2,8 @@ import { lazy, Suspense, useEffect } from 'react';
 import { Navigate, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { useMe } from './api/queries';
 import { AgeGate } from './components/AgeGate';
-import { EmptyState, ErrorState, FullScreenLoader } from './components/ui';
+import { ErrorState, FullScreenLoader } from './components/ui';
+import { WebLogin } from './components/WebLogin';
 import { CartPage } from './pages/Cart';
 import { CatalogPage } from './pages/Catalog';
 import { CheckoutPage } from './pages/Checkout';
@@ -52,15 +53,8 @@ export function App() {
   useBackButton();
   const me = useMe();
 
-  // Вне Telegram и без DEV_TELEGRAM_ID на сервере — объясняем, как открыть
-  if (me.isError && !isTelegram) {
-    return (
-      <EmptyState
-        title="Откройте магазин в Telegram"
-        text="Приложение работает внутри Telegram. Для разработки в браузере задайте DEV_TELEGRAM_ID в server/.env."
-      />
-    );
-  }
+  // Открыли в обычном браузере и ещё не вошли — экран входа через Telegram
+  if (me.isError && !isTelegram) return <WebLogin />;
   // В Telegram, но сервер не принял авторизацию или недоступен — показываем причину
   if (me.isError) return <ErrorState error={me.error} onRetry={() => void me.refetch()} />;
   if (me.isPending) return <FullScreenLoader />;
