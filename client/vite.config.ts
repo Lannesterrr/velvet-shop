@@ -23,6 +23,8 @@ export default defineConfig(({ mode }) => {
       target: 'es2020',
       sourcemap: false,
       chunkSizeWarningLimit: 800,
+      // Не считаем gzip-размеры при сборке — экономит память на слабых хостингах
+      reportCompressedSize: false,
     },
   };
 });
