@@ -1,0 +1,176 @@
+@import 'tailwindcss';
+
+/*
+ * Цвета берутся из темы Telegram: telegram-web-app.js сам выставляет
+ * CSS-переменные --tg-theme-* и обновляет их при смене темы.
+ * Fallback-значения (--fb-*) используются при открытии в обычном браузере.
+ */
+:root {
+  --fb-page: #f1f1f4;
+  --fb-card: #ffffff;
+  --fb-ink: #111111;
+  --fb-hint: #8e8e93;
+  --fb-link: #b8325f;
+  --fb-accent: #c23a6b;
+  --fb-accent-ink: #ffffff;
+  --fb-line: #e3e3e8;
+  --fb-danger: #e5484d;
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --fb-page: #0f0f10;
+    --fb-card: #1c1c1e;
+    --fb-ink: #f2f2f2;
+    --fb-hint: #8d8d93;
+    --fb-link: #ee7fa3;
+    --fb-accent: #c23a6b;
+    --fb-line: #2c2c2e;
+    --fb-danger: #ff6369;
+    color-scheme: dark;
+  }
+}
+
+@theme {
+  --color-page: var(--tg-theme-secondary-bg-color, var(--fb-page));
+  --color-card: var(--tg-theme-section-bg-color, var(--tg-theme-bg-color, var(--fb-card)));
+  --color-ink: var(--tg-theme-text-color, var(--fb-ink));
+  --color-hint: var(--tg-theme-hint-color, var(--fb-hint));
+  --color-link: var(--tg-theme-link-color, var(--fb-link));
+  /* Фирменный цвет магазина (см. src/brand.ts) — одинаковый в светлой и тёмной теме */
+  --color-accent: #c23a6b;
+  --color-accent-ink: #ffffff;
+  --color-line: var(--tg-theme-section-separator-color, var(--fb-line));
+  --color-danger: var(--tg-theme-destructive-text-color, var(--fb-danger));
+  --color-success: #2fa84f;
+  --color-warning: #e8a20c;
+
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --radius-card: 14px;
+}
+
+html,
+body {
+  background: var(--color-page);
+  color: var(--color-ink);
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior-y: none;
+}
+
+body {
+  font-family: var(--font-sans);
+  min-height: var(--tg-viewport-stable-height, 100vh);
+}
+
+/* Поле ввода в стиле Telegram */
+@utility field {
+  width: 100%;
+  border-radius: 12px;
+  background: var(--color-page);
+  color: var(--color-ink);
+  padding: 11px 14px;
+  font-size: 16px; /* 16px — iOS не зумит страницу при фокусе */
+  outline: none;
+  border: 1.5px solid transparent;
+  transition: border-color 0.15s;
+  &::placeholder {
+    color: var(--color-hint);
+  }
+  &:focus {
+    border-color: var(--color-accent);
+  }
+}
+
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 11px 16px;
+  font-weight: 600;
+  font-size: 15px;
+  transition: opacity 0.15s, transform 0.1s;
+  user-select: none;
+  &:active {
+    transform: scale(0.98);
+  }
+  &:disabled {
+    opacity: 0.45;
+    pointer-events: none;
+  }
+}
+
+@utility no-scrollbar {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    background: var(--color-accent);
+    color: var(--color-accent-ink);
+  }
+  .btn-secondary {
+    background: color-mix(in srgb, var(--color-accent) 12%, transparent);
+    color: var(--color-accent);
+  }
+  .btn-danger {
+    background: color-mix(in srgb, var(--color-danger) 12%, transparent);
+    color: var(--color-danger);
+  }
+  .card {
+    background: var(--color-card);
+    border-radius: var(--radius-card);
+  }
+  .section-title {
+    padding: 0 16px 6px;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    color: var(--color-hint);
+  }
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes sheet-in {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--color-hint) 15%, transparent);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--color-card) 50%, transparent), transparent);
+  animation: shimmer 1.4s infinite;
+}
