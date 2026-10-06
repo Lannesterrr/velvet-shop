@@ -23,6 +23,9 @@ function run(cmd, cwd = root, { optional = false } = {}) {
   console.log(`\n▶ ${cmd}`);
   const res = spawnSync(cmd, { cwd, stdio: 'inherit', shell: true, env: process.env });
   if (res.status !== 0 && !optional) {
+    if (res.status === null) {
+      console.error(`✖ Процесс «${cmd}» убит системой (${res.signal ?? 'сигнал'}) — чаще всего не хватило памяти. Попробуйте тариф с большим объёмом RAM или BUILD_MEMORY_MB=300.`);
+    }
     console.error(`✖ Команда завершилась с ошибкой (код ${res.status}): ${cmd}`);
     process.exit(res.status ?? 1);
   }
@@ -61,7 +64,13 @@ if (!built || process.env.FORCE_BUILD === '1') {
 
   // Ставим ВСЕ зависимости, включая dev: они нужны для сборки (vite, tsup, prisma)
   run('npm install --include=dev --no-audit --no-fund');
-  run('npm run build');
+  // Собираем по частям и без лишней проверки типов: на хостингах с малым объёмом памяти
+  // полная сборка может не поместиться и процесс убивается (ошибка «код null»).
+  // Лимит памяти Node берём поменьше, чтобы сборщик чаще освобождал память.
+  process.env.NODE_OPTIONS = `${process.env.NODE_OPTIONS ?? ''} --max-old-space-size=${process.env.BUILD_MEMORY_MB ?? 384}`.trim();
+  run('npm run build -w server');
+  run('npx vite build', path.join(root, 'client'));
+  process.env.NODE_OPTIONS = process.env.NODE_OPTIONS.replace(/--max-old-space-size=\d+/, '').trim();
   writeFileSync(hashFile, currentHash);
 } else {
   console.log('✔ Проект уже собран — пропускаю сборку');
